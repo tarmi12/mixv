@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiger Voucher System - V3.3.0 (Auto-Cut + ปรับปรุงใบเสร็จ)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+        body { font-family: 'Sarabun', sans-serif; overflow-x: hidden; }
+        
+        @media print {
+            @page { margin: 0; size: portrait; }
+            html, body { width: 80mm; background: white !important; margin: 0 !important; padding: 0 !important; }
+            .no-print { display: none !important; }
+            #preview-ui { display: block !important; background: white !important; padding: 0 !important; margin: 0 !important; width: 100% !important; height: auto !important; }
+            .page-break { display: block; page-break-after: always; height: 0; margin: 0; border: none; }
+            .receipt-container { width: 74mm !important; box-shadow: none !important; margin: 0 auto !important; padding: 5mm 1mm !important; border: none !important; display: block !important; }
+            h1, h2, h3, span, p, div { color: black !important; }
+        }
+        
+        .receipt-container { width: 72mm; background: white; padding: 10px 6px; font-size: 13px; line-height: 1.2; color: black; margin: 0 auto 20px auto; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .dotted-line { border-top: 1px dashed black; margin: 6px 0; }
+        .text-center { text-align: center; }
+        .flex-between { display: flex; justify-content: space-between; }
+        .total-customer { font-size: 42px; font-weight: bold; line-height: 1.2; margin: 10px 0; text-align: center; }
+        .small-text { font-size: 10px; }
+        .scanner-active { animation: blink 1.5s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+        .animate-slide-in { animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn { from { transform: translateX(-10px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .queue-badge { position: fixed; bottom: 10px; right: 10px; background: #333; color: white; padding: 5px 10px; border-radius: 20px; font-size: 12px; z-index: 50; }
+        .total-box { border: 2px solid black; padding: 8px 12px; display: inline-block; border-radius: 8px; background: #f9f9f9; margin: 5px 0; width: auto; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+    <div id="main-ui" class="max-w-md mx-auto p-4 no-print">
+        <header class="text-center mb-4">
+            <h1 class="text-2xl font-bold text-orange-600">Tiger Voucher Merge</h1>
+            <p class="text-gray-500 text-sm italic">V3.3.0: หน่วงอัตโนมัติ + ปรับปรุงใบเสร็จตามคำขอ</p>
+        </header>
+
+        <div id="staff-section" class="bg-white p-4 rounded-xl shadow-sm border-2 border-orange-200 mb-4 transition-all">
+            <div class="flex items-center justify-between mb-2">
+                <label class="text-sm font-bold text-gray-700">1. สแกน QR ชื่อพนักงาน</label>
+                <div id="staff-status" class="w-3 h-3 rounded-full bg-gray-300"></div>
+            </div>
+            <input type="text" id="staff-input" autofocus autocomplete="off"
+                   placeholder="แสกนป้ายชื่อพนักงาน..." 
+                   class="w-full border-2 border-gray-200 p-4 rounded-lg bg-orange-50 focus:border-orange-500 outline-none text-center text-lg font-bold">
+            <div id="staff-display" class="mt-3 p-3 bg-green-100 text-green-700 rounded-lg font-bold text-center hidden">
+                ✅ พนักงาน: <span id="current-staff"></span>
+            </div>
+        </div>
+
+        <div id="voucher-section" class="bg-white p-4 rounded-xl shadow-sm border-2 border-gray-100 mb-4 opacity-30 pointer-events-none transition-all">
+            <div class="flex items-center justify-between mb-2">
+                <label class="text-sm font-bold text-gray-700">2. สแกน QR Voucher (1-3 ใบ)</label>
+                <div id="scan-light" class="w-3 h-3 rounded-full bg-gray-300"></div>
+            </div>
+            <input type="text" id="voucher-input" autocomplete="off"
+                   placeholder="แสกนคูปอง..." 
+                   class="w-full border-2 border-gray-200 p-4 rounded-lg focus:border-blue-500 outline-none text-center text-lg font-bold">
+            
+            <div id="scan-msg" class="text-center text-sm mt-3 font-bold h-6 transition-all"></div>
+            <ul id="voucher-list" class="mt-4 space-y-2"></ul>
+            
+            <div id="fast-hint" class="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-lg text-center hidden animate-pulse">
+                <p class="text-blue-600 text-sm">💡 แสกน <span class="font-bold underline text-blue-800">ชื่อพนักงานอีกครั้ง</span> เพื่อพิมพ์ใบเสร็จ</p>
+            </div>
+        </div>
+
+        <button id="btn-combine" disabled
+                class="w-full bg-gray-300 text-white py-5 rounded-2xl font-bold text-xl shadow-lg transform active:scale-95 transition-all">
+            ยืนยันและสร้างใบเสร็จ
+        </button>
+        
+        <button onclick="clearAllData()" class="w-full mt-6 text-gray-400 text-sm hover:text-red-500 transition-colors">
+            🔄 ล้างข้อมูลทั้งหมด (รวม LocalStorage)
+        </button>
+    </div>
+
+    <div id="queue-badge" class="queue-badge hidden no-print">⏳ กำลังส่ง...</div>
+
+    <div id="preview-ui" class="hidden min-h-screen py-6 bg-gray-900">
+        <div class="max-w-md mx-auto px-4">
+            <h2 class="text-white text-center text-xl font-bold mb-4 no-print">สร้างใบเสร็จสำเร็จ</h2>
+            <div id="receipt-view">
+                <div id="receipt-content"></div>
+            </div>
+            <div class="mt-6 space-y-3 no-print">
+                <button id="btn-print-action" onclick="window.print()" class="w-full bg-green-500 hover:bg-green-600 text-white py-4 rounded-xl font-bold text-xl shadow-xl flex items-center justify-center gap-2">
+                    <span>🖨️ กดพิมพ์ใบเสร็จ (ตัดอัตโนมัติ)</span>
+                </button>
+                <button onclick="resetAfterPrint()" class="w-full bg-white/10 hover:bg-white/20 text-white py-4 rounded-xl font-bold text-lg border border-white/20">
+                    🔄 เสร็จสิ้น / เริ่มใหม่
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== การตั้งค่า ====================
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzmRiNa6CQEzofjQfWin0ClnHV2cCM_ZSRTITu2lbPDJqYZy-4LO9FXhheyU3CuvdPj/exec";
+        
+        const RATE_LIMIT_DELAY_MS = 5000;  // 5 วินาที
+        
+        let state = {
+            staff: "",
+            vouchers: [],
+            isProcessing: false
+        };
+        
+        let lastRequestTime = 0;
+        let pendingQueue = [];
+        let isQueueRunning = false;
+        
+        function loadFromLocalStorage() {
+            const savedStaff = localStorage.getItem('tiger_staff');
+            const savedVouchers = localStorage.getItem('tiger_vouchers');
+            if (savedStaff && savedVouchers) {
+                const confirmReload = confirm("พบข้อมูลค้างจากครั้งก่อน (พนักงาน: " + savedStaff + ")\nต้องการกู้คืนและดำเนินการต่อไหม?");
+                if (confirmReload) {
+                    state.staff = savedStaff;
+                    state.vouchers = JSON.parse(savedVouchers);
+                    applyStaffToUI();
+                    updateVoucherList();
+                    checkReady();
+                    showMsg("⚠️ กู้คืนข้อมูลสำเร็จ กรุณากดยืนยันหรือสแกนชื่อซ้ำ", "text-orange-500");
+                } else {
+                    clearLocalStorageData();
+                }
+            }
+        }
+        
+        function applyStaffToUI() {
+            document.getElementById('current-staff').innerText = state.staff;
+            document.getElementById('staff-display').classList.remove('hidden');
+            document.getElementById('staff-section').classList.add('border-green-500', 'bg-green-50');
+            document.getElementById('staff-status').classList.replace('bg-gray-300', 'bg-green-500');
+            document.getElementById('staff-input').style.display = 'none';
+            document.getElementById('voucher-section').classList.remove('opacity-30', 'pointer-events-none');
+            document.getElementById('voucher-section').classList.add('border-blue-200');
+            document.getElementById('scan-light').classList.replace('bg-gray-300', 'bg-blue-500');
+            document.getElementById('scan-light').classList.add('scanner-active');
+            if (state.vouchers.length === 0) document.getElementById('voucher-input').focus();
+            else checkReady();
+        }
+        
+        function saveToLocalStorage() {
+            if (state.staff) {
+                localStorage.setItem('tiger_staff', state.staff);
+                localStorage.setItem('tiger_vouchers', JSON.stringify(state.vouchers));
+            }
+        }
+        
+        function clearLocalStorageData() {
+            localStorage.removeItem('tiger_staff');
+            localStorage.removeItem('tiger_vouchers');
+            state.staff = "";
+            state.vouchers = [];
+            location.reload();
+        }
+        
+        function clearCurrentSessionOnly() {
+            localStorage.removeItem('tiger_staff');
+            localStorage.removeItem('tiger_vouchers');
+            state.staff = "";
+            state.vouchers = [];
+            document.getElementById('staff-input').style.display = 'block';
+            document.getElementById('staff-display').classList.add('hidden');
+            document.getElementById('staff-section').classList.remove('border-green-500', 'bg-green-50');
+            document.getElementById('staff-status').classList.replace('bg-green-500', 'bg-gray-300');
+            document.getElementById('voucher-section').classList.add('opacity-30', 'pointer-events-none');
+            document.getElementById('scan-light').classList.remove('scanner-active', 'bg-blue-500');
+            document.getElementById('scan-light').classList.add('bg-gray-300');
+            document.getElementById('voucher-list').innerHTML = "";
+            document.getElementById('fast-hint').classList.add('hidden');
+            btnCombine.disabled = true;
+            btnCombine.classList.replace('bg-orange-500', 'bg-gray-300');
+            document.getElementById('staff-input').value = "";
+            document.getElementById('voucher-input').value = "";
+            showMsg("ล้างข้อมูลเซสชันแล้ว", "text-gray-500");
+        }
+        
+        function clearAllData() {
+            if (confirm("❗ ล้างข้อมูลทั้งหมด (รวม LocalStorage) และเริ่มใหม่?")) {
+                clearLocalStorageData();
+            }
+        }
+        
+        function setQueueBadge(text, visible) {
+            const badge = document.getElementById('queue-badge');
+            if (visible) {
+                badge.innerText = text;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+        
+        async function processQueue() {
+            if (isQueueRunning) return;
+            if (pendingQueue.length === 0) {
+                setQueueBadge('', false);
+                return;
+            }
+            isQueueRunning = true;
+            
+            while (pendingQueue.length > 0) {
+                const now = Date.now();
+                const timeSinceLast = now - lastRequestTime;
+                if (timeSinceLast < RATE_LIMIT_DELAY_MS) {
+                    const wait = RATE_LIMIT_DELAY_MS - timeSinceLast;
+                    setQueueBadge(`⏳ รอส่งอีก ${Math.ceil(wait/1000)} วินาที (${pendingQueue.length} คิว)`, true);
+                    await new Promise(r => setTimeout(r, wait));
+                }
+                
+                const task = pendingQueue[0];
+                setQueueBadge(`📤 กำลังส่ง ${task.vouchers.length} ใบ...`, true);
+                
+                try {
+                    const response = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            staff_name: task.staff,
+                            vouchers: task.vouchers.map(v => ({ code: v }))
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        if (response.status === 429) throw new Error("RATE_LIMIT");
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    
+                    const result = await response.json();
+                    if (result.status === "SUCCESS") {
+                        lastRequestTime = Date.now();
+                        pendingQueue.shift();
+                        if (pendingQueue.length === 0) {
+                            generateReceipt(result);
+                            document.getElementById('main-ui').classList.add('hidden');
+                            document.getElementById('preview-ui').classList.remove('hidden');
+                            window.scrollTo(0, 0);
+                            clearCurrentSessionOnly();
+                        } else {
+                            showMsg(`✅ ส่งสำเร็จ 1 รายการ คงเหลือ ${pendingQueue.length}`, "text-green-500");
+                        }
+                    } else {
+                        throw new Error(result.message || "Unknown error");
+                    }
+                } catch (err) {
+                    if (err.message === "RATE_LIMIT" || err.message.includes("429") || err.message.includes("bandwidth")) {
+                        const waitExtra = 8000;
+                        setQueueBadge(`⚠️ โควต้าขีดจำกัด! รอ ${waitExtra/1000} วิ แล้วลองใหม่`, true);
+                        await new Promise(r => setTimeout(r, waitExtra));
+                    } else {
+                        console.error(err);
+                        alert("❌ ส่งไม่สำเร็จ: " + err.message + "\nข้อมูลจะยังคงอยู่ในคิว และ LocalStorage");
+                        pendingQueue.shift();
+                    }
+                }
+                await new Promise(r => setTimeout(r, 500));
+            }
+            isQueueRunning = false;
+            setQueueBadge('', false);
+        }
+        
+        function addToQueue(staff, vouchers) {
+            pendingQueue.push({ staff, vouchers: [...vouchers] });
+            processQueue();
+            localStorage.setItem('tiger_pending_queue', JSON.stringify(pendingQueue));
+        }
+        
+        async function processCombine() {
+            if (state.isProcessing) return;
+            const currentTime = Date.now();
+            if (currentTime - lastRequestTime < RATE_LIMIT_DELAY_MS && pendingQueue.length === 0) {
+                showMsg(`⏳ กรุณารอ ${Math.ceil((RATE_LIMIT_DELAY_MS - (currentTime - lastRequestTime))/1000)} วินาที แล้วค่อยส่ง`, "text-orange-500");
+                return;
+            }
+            
+            state.isProcessing = true;
+            btnCombine.innerText = "⏳ เตรียมเข้าคิว...";
+            btnCombine.classList.replace('bg-orange-500', 'bg-gray-400');
+            btnCombine.disabled = true;
+            document.getElementById('voucher-input').disabled = true;
+            
+            saveToLocalStorage();
+            addToQueue(state.staff, state.vouchers);
+            
+            state.vouchers = [];
+            updateVoucherList();
+            checkReady();
+            document.getElementById('voucher-input').value = "";
+            document.getElementById('voucher-input').disabled = false;
+            state.isProcessing = false;
+            btnCombine.innerText = "ยืนยันและสร้างใบเสร็จ";
+            btnCombine.classList.replace('bg-gray-400', 'bg-orange-500');
+            btnCombine.disabled = (state.vouchers.length === 0);
+            showMsg(`📋 เข้าคิวสำเร็จ (${pendingQueue.length} ธุรกรรมรอส่ง)`, "text-blue-500");
+        }
+        
+        window.resetAfterPrint = function() {
+            document.getElementById('preview-ui').classList.add('hidden');
+            document.getElementById('main-ui').classList.remove('hidden');
+            if (pendingQueue.length > 0) {
+                showMsg(`📌 มีธุรกรรมรอส่งอีก ${pendingQueue.length} รายการ`, "text-orange-500");
+                processQueue();
+            } else {
+                clearCurrentSessionOnly();
+                location.reload();
+            }
+        };
+        
+        // ---------- UI functions ----------
+        const staffInput = document.getElementById('staff-input');
+        const voucherInput = document.getElementById('voucher-input');
+        const voucherSection = document.getElementById('voucher-section');
+        const scanLight = document.getElementById('scan-light');
+        const staffStatus = document.getElementById('staff-status');
+        const btnCombine = document.getElementById('btn-combine');
+        const scanMsg = document.getElementById('scan-msg');
+        const fastHint = document.getElementById('fast-hint');
+        
+        function showMsg(text, colorClass = "text-blue-500") {
+            scanMsg.innerText = text;
+            scanMsg.className = `text-center text-sm mt-3 font-bold h-6 ${colorClass}`;
+            if (colorClass.includes('red') || colorClass.includes('orange')) {
+                setTimeout(() => { if(scanMsg.innerText === text) scanMsg.innerText = ""; }, 4000);
+            }
+        }
+        
+        function updateVoucherList() {
+            const list = document.getElementById('voucher-list');
+            list.innerHTML = state.vouchers.map((v, i) => `
+                <li class="flex justify-between items-center bg-blue-50 p-2 rounded-lg border border-blue-100 animate-slide-in">
+                    <span class="font-bold text-blue-800 text-sm">${i+1}. 🎫 ${v}</span>
+                    <button onclick="removeVoucher(${i})" class="text-red-500 px-2 font-bold text-xs">ลบ</button>
+                </li>
+            `).join('');
+            if(state.vouchers.length > 0) fastHint.classList.remove('hidden');
+            else fastHint.classList.add('hidden');
+            saveToLocalStorage();
+        }
+        
+        window.removeVoucher = function(index) {
+            if(state.isProcessing) return;
+            state.vouchers.splice(index, 1);
+            updateVoucherList();
+            checkReady();
+            voucherInput.focus();
+            saveToLocalStorage();
+        };
+        
+        function checkReady() {
+            if (state.staff && state.vouchers.length > 0) {
+                btnCombine.disabled = false;
+                btnCombine.classList.replace('bg-gray-300', 'bg-orange-500');
+            } else {
+                btnCombine.disabled = true;
+                btnCombine.classList.replace('bg-orange-500', 'bg-gray-300');
+            }
+        }
+        
+        staffInput.addEventListener('change', (e) => {
+            const val = e.target.value.trim();
+            if (val !== "") {
+                state.staff = val;
+                applyStaffToUI();
+                saveToLocalStorage();
+                showMsg("พร้อมแสกนคูปอง", "text-green-500");
+                voucherInput.focus();
+            }
+        });
+        
+        voucherInput.addEventListener('change', async (e) => {
+            const code = e.target.value.trim();
+            if (code === "" || state.isProcessing) return;
+            
+            if (code === state.staff) {
+                if (state.vouchers.length > 0) {
+                    await processCombine();
+                } else {
+                    showMsg("⚠️ กรุณาแสกนคูปองก่อนจบงาน", "text-red-500");
+                    e.target.value = "";
+                }
+                return;
+            }
+            
+            if (state.vouchers.length >= 3) {
+                showMsg("⚠️ เต็ม 3 ใบแล้ว แสกนชื่อเพื่อจบงาน", "text-red-500");
+            } else if (state.vouchers.includes(code)) {
+                showMsg("❌ แสกนไปแล้ว", "text-red-500");
+            } else {
+                state.vouchers.push(code);
+                updateVoucherList();
+                showMsg(`✅ เพิ่มใบที่ ${state.vouchers.length} สำเร็จ`, "text-green-600");
+                saveToLocalStorage();
+            }
+            e.target.value = "";
+            setTimeout(() => { if(!state.isProcessing) voucherInput.focus(); }, 10);
+            checkReady();
+        });
+        
+        btnCombine.addEventListener('click', processCombine);
+        
+        // ========== แก้ไขฟังก์ชัน generateReceipt ตามที่ร้องขอ ==========
+        function generateReceipt(data) {
+            const now = new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' });
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(data.new_voucher)}`;
+            const txId = data.transaction_id || `TX-${new Date().getTime()}`;
+            
+            // ส่วนของร้านค้า: แสดงรหัสคูปอง + จำนวน (คงเดิม)
+            const storeItemsHtml = data.vouchers_detail.map((v, idx) => `
+                <div class="flex-between">
+                    <span>🎫 ${v.code}</span>
+                    <span>${parseFloat(v.amount).toFixed(2)}.-</span>
+                </div>
+            `).join('');
+            
+            // ส่วนของลูกค้า: แสดง "บิลใบที่ X" + จำนวน (ไม่แสดงรหัสคูปอง)
+            const customerItemsHtml = data.vouchers_detail.map((v, idx) => `
+                <div class="flex-between">
+                    <span>บิลใบที่ ${idx+1}</span>
+                    <span>${parseFloat(v.amount).toFixed(2)}</span>
+                </div>
+            `).join('');
+            
+            const totalAmount = parseFloat(data.total_amount).toFixed(2);
+            
+            // ส่วนใบเสร็จร้านค้า (ไม่มีหัวข้อ TIGER VOUCHER)
+            const storeReceipt = `
+                <div class="receipt-container">
+                    <div class="dotted-line"></div>
+                    <div style="font-size: 11px;">
+                        <div class="flex-between"><span>พนักงาน:</span><span>${escapeHtml(state.staff)}</span></div>
+                        <div class="flex-between"><span>ธุรกรรม:</span><span>${txId}</span></div>
+                        <div class="flex-between"><span>เวลา:</span><span>${now}</span></div>
+                    </div>
+                    <div class="text-center" style="margin: 10px 0;">
+                        <img src="${qrUrl}" alt="QR Code" style="width: 90px; height: 90px; margin: 0 auto;">
+                        <p class="font-bold" style="margin-top: 5px; font-size: 13px;">${escapeHtml(data.new_voucher)}</p>
+                    </div>
+                    <div class="dotted-line"></div>
+                    <div><strong>รายการคูปองที่ใช้:</strong></div>
+                    ${storeItemsHtml}
+                    <div class="dotted-line"></div>
+                    <div class="flex-between" style="font-weight:bold;">
+                        <span>รวมทั้งสิ้น</span>
+                        <span>${totalAmount}.-</span>
+                    </div>
+                    
+                </div>
+            `;
+            
+            // ส่วนของลูกค้า (เปลี่ยนเป็น "เอกสารรวมเงิน", เพิ่ม txId + เวลา, ตัดเลขคูปอง, กรอบยอดรวม)
+            const customerReceipt = `
+                <div class="receipt-container">
+                    <div class="dotted-line"></div>
+                    <div style="font-size: 9px; margin-bottom: 4px;">
+                        <div class="flex-between"><span>ธุรกรรม:</span><span>${txId}</span></div>
+                        <div class="flex-between"><span>เวลา:</span><span>${now}</span></div>
+                    </div>
+                    <div class="text-center small-text" style="margin-top:12px;">เอกสารรวมเงิน</div>
+                    <div class="dotted-line"></div>
+                    ${customerItemsHtml}
+                    <div class="dotted-line"></div>
+                    <div class="text-center" style="margin-top: 8px;">
+                        <p style="font-size:13px; font-weight:bold;">ยอดรวมเงินทั้งสิ้น</p>
+                        <div class="total-box" style="border:2px solid black; padding:8px 20px; display:inline-block; border-radius:8px; background:#fff;">
+                            <span class="total-customer" style="font-size: 32px;">${totalAmount}</span> <span style="font-size:14px;">บาท</span>
+                        </div>
+                    </div>
+                    <div class="dotted-line"></div>
+                    <div class="text-center small-text">
+                        <p><strong>${escapeHtml(data.new_voucher)}</strong></p>
+                        
+                        <p style="margin-top:6px;">✨ ขอบคุณที่ใช้บริการ ✨</p>
+                    </div>
+                </div>
+            `;
+            
+            const content = storeReceipt + `<div class="page-break"></div>` + customerReceipt;
+            document.getElementById('receipt-content').innerHTML = content;
+        }
+        
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+        
+        function loadPendingQueue() {
+            const savedQueue = localStorage.getItem('tiger_pending_queue');
+            if (savedQueue) {
+                try {
+                    const queue = JSON.parse(savedQueue);
+                    if (Array.isArray(queue) && queue.length > 0) {
+                        pendingQueue = queue;
+                        showMsg(`📦 พบคิวรอส่ง ${pendingQueue.length} รายการ กำลังดำเนินการ...`, "text-orange-500");
+                        processQueue();
+                    }
+                } catch(e) {}
+            }
+        }
+        
+        loadFromLocalStorage();
+        loadPendingQueue();
+        setInterval(() => {
+            localStorage.setItem('tiger_pending_queue', JSON.stringify(pendingQueue));
+        }, 2000);
+    </script>
+</body>
+</html>
